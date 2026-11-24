@@ -1,46 +1,229 @@
+
 <!doctype html>
-<html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<title>FSR4 — HP Control</title>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FSR4 - HP Control</title>
 <style>
-:root{color-scheme:dark;font-family:Segoe UI,Arial,sans-serif;background:#07111e;color:#edf4ff}
-*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at top,#18304e,#07111e 68%)}
-main{max-width:560px;margin:auto;padding:20px 16px 34px}header{text-align:center;padding:16px 0 22px}
-h1{font-size:25px;margin:0 0 7px}.muted{color:#9db0c8;font-size:13px;line-height:1.5}
-.panel{background:#122239;border:1px solid #2b4565;border-radius:20px;padding:19px;margin-bottom:15px;box-shadow:0 12px 32px #0003}
-.connection{display:flex;justify-content:space-between;gap:10px;align-items:center}.pill{border:1px solid #3b5574;border-radius:999px;padding:9px 12px;font-size:12px}
-button{width:100%;border:0;border-radius:16px;padding:20px 14px;font-size:18px;font-weight:800;color:white;cursor:pointer;letter-spacing:.3px}
-button:disabled{opacity:.35;cursor:not-allowed}.connect{background:#2563eb;padding:15px;font-size:15px}.base{background:#475569}.start{background:#059669}.stop{background:#c02636}
-.actions{display:grid;gap:13px;margin-top:17px}.state{text-align:center;font-size:27px;font-weight:850;letter-spacing:1px;padding:18px 10px;border-radius:15px;background:#1b3554;color:#bfdbfe}
-.state.run{background:#064e3b;color:#a7f3d0}.state.ready{background:#164e63;color:#a5f3fc}.state.stop{background:#641e2b;color:#fecdd3}
-.note{font-size:12px;color:#9db0c8;line-height:1.6}.steps{display:grid;gap:9px}.step{padding:11px 12px;background:#172c46;border-radius:12px;font-size:13px;color:#c8d7e9}
+:root {
+  color-scheme:dark;
+  font-family:Segoe UI,Arial,sans-serif;
+  background:#07111e;
+  color:#edf4ff
+}
+*{box-sizing:border-box}
+body{
+  margin:0;min-height:100vh;
+  background:radial-gradient(circle at top,#18304e,#07111e 68%)
+}
+main{max-width:560px;margin:auto;padding:20px 16px 34px}
+header{text-align:center;padding:16px 0 22px}
+h1{font-size:25px;margin:0 0 7px}
+.muted,.note{color:#9db0c8;font-size:13px;line-height:1.6}
+.panel{
+  background:#122239;border:1px solid #2b4565;
+  border-radius:20px;padding:19px;margin-bottom:15px
+}
+.connection{display:flex;justify-content:space-between;gap:10px;align-items:center}
+.pill{border:1px solid #3b5574;border-radius:999px;padding:9px 12px;font-size:12px}
+button{
+  width:100%;border:0;border-radius:16px;padding:19px 14px;
+  font-size:17px;font-weight:800;color:white;cursor:pointer
+}
+button:disabled{opacity:.35;cursor:not-allowed}
+.connect{background:#2563eb;padding:15px;font-size:15px}
+.base{background:#475569}
+.start{background:#059669}
+.stop{background:#c02636}
+.actions{display:grid;gap:13px;margin-top:17px}
+.state{
+  text-align:center;font-size:27px;font-weight:850;
+  padding:18px 10px;border-radius:15px;
+  background:#1b3554;color:#bfdbfe
+}
+.state.run{background:#064e3b;color:#a7f3d0}
+.state.ready{background:#164e63;color:#a5f3fc}
+.state.stop{background:#641e2b;color:#fecdd3}
+.log{
+  background:#091726;padding:12px;border-radius:12px;
+  font-size:12px;line-height:1.6;overflow-wrap:anywhere;
+  color:#c8d7e9;white-space:pre-wrap
+}
+.step{padding:11px 12px;background:#172c46;border-radius:12px;font-size:13px;color:#c8d7e9;margin-top:9px}
 footer{text-align:center;color:#7086a2;font-size:11px;padding:8px}
-</style></head><body><main>
-<header><h1>FSR4 · Control Panel</h1><div class="muted">Pengendali pengukuran dari HP melalui Bluetooth Low Energy</div></header>
-<section class="panel"><div class="connection"><strong>Koneksi ESP32</strong><span id="conn" class="pill">Belum terhubung</span></div>
-<button class="connect" id="connect" style="margin-top:15px">Hubungkan ke FSR4-Monitor</button>
-<p class="note">Hubungkan HP ke ESP32 untuk mengirim perintah. Aktifkan Bluetooth HP dan dekatkan ke ESP32. Koneksi HP dan laptop secara bersamaan bergantung pada dukungan multi-client firmware BLE.</p></section>
-<section class="panel"><div class="muted" style="text-align:center">STATUS SISTEM</div><div id="state" class="state" style="margin-top:10px">IDLE</div>
+</style>
+</head>
+<body>
+<main>
+<header>
+<h1>FSR4 · Control Panel</h1>
+<div class="muted">Pengendali pengukuran melalui Bluetooth Low Energy</div>
+</header>
+
+<section class="panel">
+<div class="connection">
+<strong>Koneksi ESP32</strong>
+<span id="conn" class="pill">Belum terhubung</span>
+</div>
+<button class="connect" id="connect" style="margin-top:15px">
+Hubungkan ke FSR4-Monitor
+</button>
+<p class="note" id="support"></p>
+</section>
+
+<section class="panel">
+<div class="muted" style="text-align:center">STATUS SISTEM</div>
+<div id="state" class="state" style="margin-top:10px">IDLE</div>
 <div class="actions">
 <button id="baseline" class="base" disabled>1 · BASELINE</button>
 <button id="start" class="start" disabled>2 · START PENGUKURAN</button>
 <button id="stop" class="stop" disabled>3 · STOP</button>
-</div><p id="message" class="note" style="text-align:center;margin-bottom:0">Hubungkan perangkat untuk mengaktifkan tombol kontrol.</p></section>
-<section class="panel"><strong>Urutan penggunaan</strong><div class="steps" style="margin-top:12px">
-<div class="step">1. Letakkan sistem pada posisi referensi, kemudian tekan BASELINE.</div>
-<div class="step">2. Tunggu status berubah menjadi READY.</div>
-<div class="step">3. Tekan START untuk memulai pengukuran.</div>
-<div class="step">4. Tekan STOP untuk mengakhiri pengukuran.</div>
-</div></section>
-<p class="note">Tombol fisik pada ESP32 tetap dapat digunakan. Dashboard HP ini mengirim perintah saja; pemantauan grafik dan pencatatan CSV dilakukan melalui laptop.</p>
-<footer>FSR4 BLE · Offline · Tidak menggunakan internet</footer>
+</div>
+<p id="message" class="note" style="text-align:center">
+Hubungkan perangkat untuk mengaktifkan tombol kontrol.
+</p>
+</section>
+
+<section class="panel">
+<strong>Diagnostik koneksi</strong>
+<p id="log" class="log">Menunggu koneksi BLE...</p>
+</section>
+
+<section class="panel">
+<strong>Urutan penggunaan</strong>
+<div class="step">1. Tekan BASELINE.</div>
+<div class="step">2. Tunggu status READY.</div>
+<div class="step">3. Tekan START.</div>
+<div class="step">4. Tekan STOP untuk mengakhiri.</div>
+</section>
+
+<p class="note">
+Tombol fisik ESP32 tetap dapat digunakan.
+Pengukuran dan pencatatan data dilakukan melalui sistem monitoring laptop.
+</p>
+<footer>FSR4 BLE · Kontrol HP</footer>
 </main>
+
 <script>
-const S='6e400001-b5a3-f393-e0a9-e50e24dcca9e',T='6e400004-b5a3-f393-e0a9-e50e24dcca9e',C='6e400002-b5a3-f393-e0a9-e50e24dcca9e';
-let device,commandChar,statusChar,state='IDLE';const $=id=>document.getElementById(id);
-function render(s){state=s;$('state').textContent=s;$('state').className='state'+(s==='RUN'?' run':s==='READY'?' ready':s==='STOP'?' stop':'');
-$('baseline').disabled=!commandChar||s==='BASELINE';$('start').disabled=!commandChar||s!=='READY';$('stop').disabled=!commandChar||s!=='RUN';
-$('message').textContent=s==='BASELINE'?'Mengambil nilai referensi. Mohon pertahankan posisi sensor.':s==='READY'?'Baseline selesai. Pengukuran siap dimulai.':s==='RUN'?'Pengukuran sedang berlangsung.':s==='STOP'?'Pengukuran dihentikan.':'Sistem menunggu perintah.'}
-async function connect(){try{if(!navigator.bluetooth)throw Error('Browser tidak mendukung Web Bluetooth. Gunakan Chrome Android terbaru.');device=await navigator.bluetooth.requestDevice({filters:[{name:'FSR4-Monitor'}],optionalServices:[S]});device.addEventListener('gattserverdisconnected',()=>{commandChar=statusChar=null;$('conn').textContent='Terputus';render(state)});let g=await device.gatt.connect(),svc=await g.getPrimaryService(S);commandChar=await svc.getCharacteristic(C);statusChar=await svc.getCharacteristic(T);await statusChar.startNotifications();statusChar.addEventListener('characteristicvaluechanged',e=>render(new TextDecoder().decode(e.target.value).trim()));$('conn').textContent='Terhubung'}catch(e){alert('Koneksi gagal: '+e.message);console.error(e)}}
-async function send(cmd){if(!commandChar)return;try{await commandChar.writeValue(new TextEncoder().encode(cmd));$('message').textContent='Perintah '+cmd+' dikirim. Menunggu status ESP32...'}catch(e){alert('Perintah gagal dikirim: '+e.message)}}
-$('connect').onclick=connect;$('baseline').onclick=()=>send('BASELINE');$('start').onclick=()=>send('START');$('stop').onclick=()=>send('STOP');render('IDLE');
-</script></body></html>
+const S='6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+const T='6e400004-b5a3-f393-e0a9-e50e24dcca9e';
+const C='6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+
+let device=null;
+let commandChar=null;
+let statusChar=null;
+let state='IDLE';
+
+const $=id=>document.getElementById(id);
+
+function log(msg){
+  $('log').textContent=new Date().toLocaleTimeString()+' — '+msg;
+}
+
+function render(s){
+  state=s;
+  $('state').textContent=s;
+  $('state').className='state'+
+    (s==='RUN'?' run':s==='READY'?' ready':s==='STOP'?' stop':'');
+
+  const connected=!!commandChar;
+  $('baseline').disabled=!connected||s==='BASELINE';
+  $('start').disabled=!connected||s!=='READY';
+  $('stop').disabled=!connected||s!=='RUN';
+
+  $('message').textContent=
+    s==='BASELINE'?'Mengambil nilai referensi sensor.':
+    s==='READY'?'Baseline selesai. Pengukuran siap dimulai.':
+    s==='RUN'?'Pengukuran sedang berlangsung.':
+    s==='STOP'?'Pengukuran dihentikan.':
+    'Sistem menunggu perintah.';
+}
+
+async function connect(){
+  try{
+    if(!navigator.bluetooth){
+      throw new Error('Web Bluetooth tidak tersedia. Gunakan Chrome Android melalui HTTPS.');
+    }
+
+    $('connect').disabled=true;
+    $('conn').textContent='Mencari perangkat...';
+    log('Meminta pemilihan perangkat BLE.');
+
+    device=await navigator.bluetooth.requestDevice({
+      filters:[{name:'FSR4-Monitor'}],
+      optionalServices:[S]
+    });
+
+    log('Perangkat ditemukan: '+device.name);
+    device.addEventListener('gattserverdisconnected',()=>{
+      commandChar=null;
+      statusChar=null;
+      $('conn').textContent='Terputus';
+      $('connect').disabled=false;
+      render(state);
+      log('Koneksi GATT terputus.');
+    });
+
+    const server=await device.gatt.connect();
+    log('GATT berhasil terhubung.');
+
+    const service=await server.getPrimaryService(S);
+    log('BLE service ditemukan.');
+
+    commandChar=await service.getCharacteristic(C);
+    statusChar=await service.getCharacteristic(T);
+    log('Karakteristik perintah dan status ditemukan.');
+
+    statusChar.addEventListener('characteristicvaluechanged',event=>{
+      const value=new TextDecoder().decode(event.target.value).trim();
+      log('Status ESP32: '+value);
+      render(value);
+    });
+
+    await statusChar.startNotifications();
+    $('conn').textContent='Terhubung';
+    $('connect').textContent='Terhubung ke '+device.name;
+    log('Notifikasi aktif. Menunggu status ESP32.');
+
+  }catch(error){
+    commandChar=null;
+    statusChar=null;
+    $('conn').textContent='Gagal terhubung';
+    $('connect').disabled=false;
+    log('ERROR: '+error.name+' — '+error.message);
+    alert('Koneksi gagal: '+error.message);
+  }
+}
+
+async function send(cmd){
+  if(!commandChar)return;
+
+  try{
+    const data=new TextEncoder().encode(cmd);
+    if(commandChar.writeValueWithResponse){
+      await commandChar.writeValueWithResponse(data);
+    }else{
+      await commandChar.writeValue(data);
+    }
+    log('Perintah '+cmd+' berhasil dikirim.');
+  }catch(error){
+    log('Gagal mengirim '+cmd+': '+error.message);
+    alert('Perintah gagal: '+error.message);
+  }
+}
+
+$('support').textContent=
+  navigator.bluetooth
+  ?'Web Bluetooth tersedia pada browser ini.'
+  :'Browser tidak mendukung Web Bluetooth. Gunakan Chrome Android terbaru.';
+
+$('connect').addEventListener('click',connect);
+$('baseline').addEventListener('click',()=>send('BASELINE'));
+$('start').addEventListener('click',()=>send('START'));
+$('stop').addEventListener('click',()=>send('STOP'));
+
+render('IDLE');
+</script>
+</body>
+</html>
