@@ -1,0 +1,37 @@
+<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Laporan Pengukuran FSR4</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script><script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script><script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script><script src="firebase-config.js"></script>
+<style>
+:root{color-scheme:light;font-family:Arial,sans-serif;background:#eef3f8;color:#17283d}*{box-sizing:border-box}body{margin:0;padding:22px}.wrap{max-width:850px;margin:auto;background:white;border:1px solid #d8e2ed;border-radius:18px;padding:25px;box-shadow:0 12px 35px #17324b12}h1{margin:0 0 5px}.muted{color:#60758b;font-size:13px}.status{padding:15px;border-radius:12px;margin:18px 0;background:#e8f1fb}.status.warn{background:#fff3d8}.status.bad{background:#fde7e7}.status.good{background:#e1f5eb}.status h2{margin:0 0 5px}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.card{background:#f4f7fa;border-radius:12px;padding:14px}.bar{height:10px;background:#dbe4ee;border-radius:99px;overflow:hidden}.fill{height:100%;background:#3182ce}.item{margin:12px 0}.table-wrap{overflow:auto;max-height:520px;border:1px solid #d8e2ed;border-radius:10px}.samples{border-collapse:collapse;width:100%;font-size:12px;white-space:nowrap}.samples th,.samples td{padding:8px;border-bottom:1px solid #e1e8ef;text-align:right}.samples th:first-child,.samples td:first-child{text-align:left}.samples thead{position:sticky;top:0;background:#e8eef5}.foot{font-size:12px;color:#64788c;line-height:1.6;border-top:1px solid #e0e7ef;padding-top:15px;margin-top:22px}button{padding:10px 14px;border:0;border-radius:9px;background:#1d65c1;color:white;font-weight:bold}@media(max-width:600px){body{padding:10px}.wrap{padding:17px}.grid{grid-template-columns:1fr}}
+</style></head><body><main class="wrap">
+<h1>Laporan Pengukuran FSR4</h1><div class="muted">Laporan berdasarkan satu sesi pengukuran · Identitas pasien tidak dicantumkan</div>
+<div id="state" class="status">Memuat laporan…</div><div id="content"></div>
+<div class="foot">Laporan ini merupakan alat bantu pemantauan distribusi pembacaan empat sensor FSR. Kategori evaluasi bersifat indikator teknis awal, bukan diagnosis medis atau penetapan bahwa pasien aman/bebas risiko. Pemeriksaan dan keputusan klinis tetap menjadi kewenangan tenaga kesehatan.</div>
+</main><script>
+const $=id=>document.getElementById(id);const params=new URLSearchParams(location.search),id=params.get('id');
+async function load(){if(!id){$('state').textContent='ID sesi tidak ditemukan.';return}let cfg=window.FSR4_FIREBASE_CONFIG;if(!cfg){$('state').textContent='Konfigurasi Firebase belum diisi pada firebase-config.js.';return}try{if(!firebase.apps.length)firebase.initializeApp(cfg);let auth=firebase.auth();if(!auth.currentUser)await auth.signInAnonymously();let snap=await firebase.firestore().collection('fsr4_sessions').doc(id).get();if(!snap.exists){$('state').textContent='Laporan tidak ditemukan. Pastikan sesi sudah disinkronkan.';return}render(snap.data())}catch(e){$('state').textContent='Gagal memuat laporan: '+e.message}}
+function render(s){let e=s.evaluation||{},c=e.category||'DATA_TIDAK_MEMADAI',cl=c==='PERLU_EVALUASI'?'warn':c==='DATA_TIDAK_MEMADAI'?'bad':'good',title=c==='PERLU_EVALUASI'?'PERLU EVALUASI':c==='DATA_TIDAK_MEMADAI'?'DATA TIDAK MEMADAI':'PEMANTAUAN';$('state').className='status '+cl;$('state').innerHTML=`<h2>${title}</h2><div>${(e.reason||[]).join(' ')}</div>`;let dt=new Date(s.startedAt);let startText=s.startedAtLocal||dt.toLocaleString('id-ID');let endText=s.endedAtLocal||(s.endedAt?new Date(s.endedAt).toLocaleString('id-ID'):'—');let html=`<div class="grid"><div class="card"><b>ID sesi</b><p>${s.id}</p></div><div class="card"><b>Waktu mulai</b><p>${startText}</p></div><div class="card"><b>Waktu selesai</b><p>${endText}</p></div><div class="card"><b>Durasi</b><p>${Math.round((s.durationMs||0)/1000)} detik</p></div><div class="card"><b>Jumlah sampel</b><p>${s.sampleCount||0}</p></div><div class="card"><b>Interval pencatatan</b><p>${s.sampleIntervalMs||1000} ms (1 detik)</p></div></div><h3>Distribusi relatif estimasi massa</h3>`;let names=['FSR1 · Kiri depan','FSR2 · Kanan depan','FSR3 · Kiri belakang','FSR4 · Kanan belakang'];(e.distribution||[0,0,0,0]).forEach((v,i)=>{html+=`<div class="item"><div>${names[i]} — ${Number(v).toFixed(1)}%</div><div class="bar"><div class="fill" style="width:${Math.max(0,Math.min(100,v))}%"></div></div></div>`});const samples=s.samples||[];
+ html+='<h3>Rincian data setiap detik</h3><p class="muted">Waktu lokal laptop saat notifikasi BLE diterima. Interval target pengiriman ESP32 adalah 1 detik.</p><div class="table-wrap"><table class="samples"><thead><tr><th>Waktu aktual</th><th>Detik ke-</th><th>FSR1 ADC</th><th>FSR2 ADC</th><th>FSR3 ADC</th><th>FSR4 ADC</th></tr></thead><tbody>';
+ samples.forEach((r,i)=>{const tm=r.localTime||(r.t?new Date(r.t).toLocaleString('id-ID'):'—');const sec=(r.elapsedSeconds??i+1);const a=r.adc||[null,null,null,null];html+=`<tr><td>${tm}</td><td>${sec}</td><td>${a[0]??'—'}</td><td>${a[1]??'—'}</td><td>${a[2]??'—'}</td><td>${a[3]??'—'}</td></tr>`});
+ html+='</tbody></table></div>';
+ if(s.patientBaseline){
+ const b=s.patientBaseline;
+ html+=`<h3>Data baseline pasien</h3><div class="grid">
+ <div class="card"><b>Kode pasien</b><p>${b.patientCode||'—'}</p></div>
+ <div class="card"><b>Berat / tinggi</b><p>${b.weightKg||'—'} kg / ${b.heightCm||'—'} cm</p></div>
+ <div class="card"><b>BMI</b><p>${b.bmi??'—'}</p></div>
+ <div class="card"><b>Mobilitas</b><p>${b.mobility||'—'}</p></div>
+ <div class="card"><b>Kulit awal</b><p>${b.initialSkin||'—'}</p></div>
+ <div class="card"><b>Riwayat luka tekan</b><p>${b.previousPressureInjury||'—'}</p></div></div>`;
+ }else{html+='<h3>Data baseline pasien</h3><p>Baseline pasien tidak tercatat pada sesi ini.</p>'}
+ if(s.postAssessment){
+ const p=s.postAssessment;
+ html+=`<h3>Pemeriksaan setelah transportasi</h3><div class="grid">
+ <div class="card"><b>Kondisi kulit akhir</b><p>${p.finalSkin||'—'}</p></div>
+ <div class="card"><b>Respons blanching</b><p>${p.blanching||'—'}</p></div>
+ <div class="card"><b>Penilaian klinis</b><p>${p.clinicalAssessment||'—'}</p></div>
+ <div class="card"><b>Waktu pemeriksaan</b><p>${p.assessedAt?new Date(p.assessedAt).toLocaleString('id-ID'):'—'}</p></div></div>
+ <p>${p.notes||''}</p>`;
+ }else{html+='<h3>Pemeriksaan setelah transportasi</h3><p>Belum diisi oleh tenaga kesehatan.</p>'}
+ html+='<h3>Rekomendasi tindakan</h3><ul>'+(e.recommendations||['Data belum cukup untuk rekomendasi.']).map(x=>`<li>${x}</li>`).join('')+'</ul>';if(e.thresholdNote)html+=`<p class="muted">${e.thresholdNote}</p>`;$('content').innerHTML=html}
+load();
+</script></body></html>

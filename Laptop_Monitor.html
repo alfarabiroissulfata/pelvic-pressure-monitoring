@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FSR4 — Monitoring dan Riwayat</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="firebase-config.js"></script>
+<style>
+:root{color-scheme:dark;font-family:Segoe UI,Arial,sans-serif;background:#08111f;color:#eaf1fb}
+*{box-sizing:border-box}body{margin:0;background:linear-gradient(145deg,#08111f,#13243b);min-height:100vh}
+main{max-width:1200px;margin:auto;padding:22px}header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+h1{font-size:25px;margin:0 0 5px}.muted{color:#9db0c8;font-size:13px}.pill{border:1px solid #3a506d;border-radius:999px;padding:9px 13px;font-size:12px}
+.panel,.sensor{background:#132238;border:1px solid #29415f;border-radius:16px;padding:17px;margin-bottom:15px}
+.toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}button{border:0;border-radius:10px;padding:11px 16px;font-weight:700;background:#2563eb;color:white;cursor:pointer}
+button:disabled{opacity:.45;cursor:not-allowed}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.sensor h3{font-size:14px;margin:0;color:#c9d8e9}.value{font-size:32px;font-weight:800;margin:12px 0 2px;font-variant-numeric:tabular-nums}
+.track{height:9px;background:#2a405d;border-radius:99px;overflow:hidden;margin-top:12px}.fill{height:100%;width:0;background:linear-gradient(90deg,#38bdf8,#34d399)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:15px}.heat{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.cell{min-height:110px;border:1px solid #456080;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:#1b3857}
+.cell strong{font-size:26px}.cell span{font-size:12px}canvas{width:100%;height:260px;display:block}
+.metric{display:flex;gap:22px;flex-wrap:wrap;color:#bacbe0;font-size:13px}.metric b{color:white}
+.note{font-size:12px;line-height:1.55;color:#9db0c8}
+@media(max-width:800px){.grid{grid-template-columns:repeat(2,1fr)}.two{grid-template-columns:1fr}}
+@media(max-width:430px){main{padding:12px}.grid{gap:8px}.sensor{padding:12px}.value{font-size:25px}}
+.history-link{display:inline-block;margin-top:10px;color:#93c5fd;text-decoration:none;font-weight:700}.syncbox{margin-top:12px;padding:12px;border:1px solid #36516f;border-radius:12px;background:#102038}.syncbox input{width:100%;padding:10px;margin:5px 0 10px;border-radius:8px;border:1px solid #456080;background:#0b1728;color:#fff}.secondary{background:#334b68}.danger{background:#9f2637}.small{font-size:12px;color:#9db0c8;line-height:1.5}
+@media(max-width:800px){.grid{grid-template-columns:repeat(2,1fr)}.two{grid-template-columns:1fr}}
+
+.patient-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.field{display:flex;flex-direction:column;gap:6px;font-size:12px;color:#b9cbe0}
+.field input,.field select,.field textarea{width:100%;padding:10px;border-radius:9px;border:1px solid #456080;background:#0b1728;color:#fff;font:inherit}
+.field textarea{min-height:68px;resize:vertical}
+.form-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+.form-hint{font-size:12px;line-height:1.5;color:#9db0c8}
+@media(max-width:800px){.patient-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:430px){.patient-grid{grid-template-columns:1fr}}
+
+</style></head><body><main>
+<header><div><h1>FSR4 · Laptop Monitoring</h1><div class="muted">Tampilan pemantauan saja — kendali pengukuran dilakukan dari HP</div></div><div id="connection" class="pill">● Belum terhubung</div></header>
+<section class="panel"><div class="toolbar"><button id="connect">Hubungkan ESP32</button><span id="status" class="pill">Status: IDLE</span><span id="last" class="muted">Belum ada data</span></div><p class="note">Hubungkan ke FSR4-Monitor. Jangan jalankan halaman kontrol di laptop ini; gunakan halaman FSR4 Control pada HP. Sesi baru direkam otomatis saat status RUN dan disimpan saat STOP. Paket data direkam setiap 1 detik; jam aktual mengikuti laptop saat data BLE diterima.</p>
+<a class="history-link" href="Riwayat_Pengukuran.html">▣ Buka Riwayat Pengukuran & QR →</a></section>
+
+<section class="panel">
+  <h3>A. Data Baseline Pasien</h3>
+  <p class="note">Gunakan kode pasien anonim, bukan nama atau nomor rekam medis. Data ini menjadi snapshot kondisi awal untuk setiap sesi monitoring.</p>
+  <div class="patient-grid">
+    <label class="field">Kode pasien
+      <input id="patientCode" maxlength="32" placeholder="Contoh: P001">
+    </label>
+    <label class="field">Berat badan (kg)
+      <input id="weightKg" type="number" min="1" max="500" step="0.1" placeholder="Contoh: 60">
+    </label>
+    <label class="field">Tinggi badan (cm)
+      <input id="heightCm" type="number" min="30" max="250" step="0.1" placeholder="Contoh: 165">
+    </label>
+    <label class="field">Mobilitas
+      <select id="mobility">
+        <option value="">Pilih kondisi</option>
+        <option value="independent">Mandiri</option>
+        <option value="limited">Terbatas</option>
+        <option value="immobile">Tidak dapat mengubah posisi mandiri</option>
+        <option value="unknown">Belum dinilai</option>
+      </select>
+    </label>
+    <label class="field">Kondisi kulit panggul awal
+      <select id="initialSkin">
+        <option value="">Pilih hasil pemeriksaan</option>
+        <option value="intact">Utuh / tidak ditemukan tanda luka tekan</option>
+        <option value="suspicious">Ada perubahan yang mencurigakan</option>
+        <option value="injury_present">Sudah terdapat luka tekan</option>
+        <option value="not_assessed">Belum diperiksa</option>
+      </select>
+    </label>
+    <label class="field">Riwayat luka tekan
+      <select id="previousInjury">
+        <option value="">Pilih</option>
+        <option value="no">Tidak diketahui / tidak ada riwayat</option>
+        <option value="yes">Ada riwayat</option>
+        <option value="unknown">Belum diketahui</option>
+      </select>
+    </label>
+  </div>
+  <div class="metric" style="margin-top:10px"><span>BMI: <b id="bmiValue">—</b></span><span id="baselineSaved">Baseline belum disimpan</span></div>
+  <div class="form-actions">
+    <button id="saveBaseline">Simpan baseline pasien</button>
+    <button id="clearBaseline" class="secondary" type="button">Kosongkan formulir</button>
+  </div>
+  <p class="form-hint">BMI dihitung otomatis sebagai informasi antropometri, bukan penentu diagnosis luka tekan. Pemeriksaan kulit dan riwayat harus diisi berdasarkan penilaian tenaga kesehatan.</p>
+</section>
+
+<section class="panel" id="postAssessmentPanel" style="display:none">
+  <h3>D. Pemeriksaan Kulit Setelah Transportasi</h3>
+  <p class="note">Isi setelah sesi STOP. Hasil ini merupakan catatan pemeriksaan tenaga kesehatan, bukan hasil diagnosis otomatis FSR.</p>
+  <div class="patient-grid">
+    <label class="field">Kondisi kulit akhir
+      <select id="finalSkin">
+        <option value="">Pilih hasil pemeriksaan</option>
+        <option value="intact">Utuh / tidak ditemukan tanda baru</option>
+        <option value="suspicious">Ada perubahan yang mencurigakan</option>
+        <option value="injury_present">Ditemukan luka tekan</option>
+        <option value="not_assessed">Belum diperiksa</option>
+      </select>
+    </label>
+    <label class="field">Respons blanching (jika ada kemerahan)
+      <select id="blanching">
+        <option value="not_applicable">Tidak ada kemerahan / tidak berlaku</option>
+        <option value="blanchable">Memudar saat ditekan</option>
+        <option value="non_blanchable">Tidak memudar saat ditekan</option>
+        <option value="not_assessed">Belum dinilai</option>
+      </select>
+    </label>
+    <label class="field">Penilaian tenaga kesehatan
+      <select id="clinicalAssessment">
+        <option value="pending">Belum ada kesimpulan klinis</option>
+        <option value="no_new_sign">Tidak ditemukan tanda luka tekan baru</option>
+        <option value="suspected_new">Dugaan luka tekan baru</option>
+        <option value="existing_changed">Luka sebelumnya mengalami perubahan</option>
+        <option value="confirmed_new">Luka tekan baru dikonfirmasi klinisi</option>
+      </select>
+    </label>
+  </div>
+  <label class="field" style="margin-top:10px">Catatan pemeriksaan akhir
+    <textarea id="finalNotes" maxlength="1000" placeholder="Catatan pemeriksaan oleh tenaga kesehatan..."></textarea>
+  </label>
+  <div class="form-actions"><button id="savePostAssessment">Simpan pemeriksaan akhir</button></div>
+  <p class="form-hint">Penentuan luka tekan dan stadium tetap berdasarkan pemeriksaan klinis. Data FSR digunakan sebagai riwayat paparan tekanan pendukung.</p>
+</section>
+
+<section class="grid">
+<article class="sensor"><h3>FSR 1 · Kiri depan</h3><div id="v0" class="value">—</div><div class="muted">ADC mentah · estimasi <b id="g0">—</b> g</div><div class="muted" id="cal0">Kalibrasi awal</div><div class="track"><div id="b0" class="fill"></div></div></article>
+<article class="sensor"><h3>FSR 2 · Kanan depan</h3><div id="v1" class="value">—</div><div class="muted">ADC mentah · estimasi <b id="g1">—</b> g</div><div class="muted" id="cal1">Kalibrasi awal</div><div class="track"><div id="b1" class="fill"></div></div></article>
+<article class="sensor"><h3>FSR 3 · Kiri belakang</h3><div id="v2" class="value">—</div><div class="muted">ADC mentah · estimasi <b id="g2">—</b> g</div><div class="muted" id="cal2">Kalibrasi awal</div><div class="track"><div id="b2" class="fill"></div></div></article>
+<article class="sensor"><h3>FSR 4 · Kanan belakang</h3><div id="v3" class="value">—</div><div class="muted">ADC mentah · estimasi <b id="g3">—</b> g</div><div class="muted" id="cal3">Kalibrasi awal</div><div class="track"><div id="b3" class="fill"></div></div></article>
+</section>
+<section class="two" style="margin-top:15px">
+<div class="panel"><h3>Distribusi relatif gaya (kalibrasi awal)</h3><div class="heat">
+<div class="cell" id="h0"><span>FSR 1 · Kiri depan</span><strong>—</strong></div><div class="cell" id="h1"><span>FSR 2 · Kanan depan</span><strong>—</strong></div>
+<div class="cell" id="h2"><span>FSR 3 · Kiri belakang</span><strong>—</strong></div><div class="cell" id="h3"><span>FSR 4 · Kanan belakang</span><strong>—</strong></div>
+</div><p class="note">Persentase dihitung dari estimasi massa menggunakan tabel kalibrasi individual awal. Bukan tekanan jaringan atau diagnosis klinis.</p></div>
+<div class="panel"><h3>Grafik ADC real-time</h3><canvas id="chart" width="760" height="280"></canvas><div class="metric"><span>Sampel: <b id="samples">0</b></span><span>Durasi RUN: <b id="elapsed">00:00</b></span></div></div>
+</section>
+<section class="panel"><div class="toolbar"><button id="csv" disabled>Ekspor CSV sesi berjalan</button><span class="muted" id="log">Menunggu data BLE.</span></div>
+<div class="syncbox">
+<strong>Penyimpanan laporan</strong>
+<div class="small">Data setiap sesi disimpan terlebih dahulu di laptop (offline). Jika Firebase dikonfigurasi dan internet tersedia, sesi disinkronkan agar QR dapat dibuka dari HP/perangkat lain.</div>
+<label class="small" for="firebaseConfig">Konfigurasi Firebase (JSON)</label>
+<input id="firebaseConfig" placeholder='Tempel konfigurasi Firebase Web App di sini' autocomplete="off">
+<div class="toolbar"><button id="saveConfig" class="secondary">Simpan konfigurasi</button><button id="syncNow" class="secondary">Sinkronkan sesi</button><span id="syncStatus" class="small">Mode lokal aktif</span></div>
+</div>
+<p class="note">Dashboard mencatat setiap paket data per 1 detik beserta tanggal dan jam lokal laptop (HH:MM:SS), lalu merekam ADC mentah dan menampilkan estimasi massa berdasarkan tabel kalibrasi individual awal. Tabel tersebut masih provisional dan harus divalidasi pada rangkaian serta pemasangan aktual. Indikator distribusi bukan diagnosis klinis.</p></section>
+</main>
+
+<script>
+const S='6e400001-b5a3-f393-e0a9-e50e24dcca9e',D='6e400003-b5a3-f393-e0a9-e50e24dcca9e',T='6e400004-b5a3-f393-e0a9-e50e24dcca9e';
+const DB_NAME='FSR4_LocalDB', STORE='sessions';
+let device,dataChar,statusChar,values=[0,0,0,0],hist=[[],[],[],[]],rows=[],sample=0,runStart=null,elapsedTimer=null;
+let activeSession=null, recording=false, sessionRows=[], sessionStartedAt=null, currentState='IDLE', finishing=false;
+let patientBaseline=null, sessionPatientBaseline=null, lastFinishedSessionId=null;
+function localStamp(d=new Date()){const p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`}
+function localDateTime(iso){return iso?localStamp(new Date(iso)):'—'}
+function readBaselineForm(){
+ const weight=Number($('weightKg').value),height=Number($('heightCm').value);
+ const h=height/100, bmi=(weight>0&&height>0)?weight/(h*h):null;
+ return {
+   patientCode:$('patientCode').value.trim(),
+   weightKg:weight||null,heightCm:height||null,
+   bmi:bmi?Number(bmi.toFixed(2)):null,
+   mobility:$('mobility').value,
+   initialSkin:$('initialSkin').value,
+   previousPressureInjury:$('previousInjury').value,
+   assessedAt:new Date().toISOString()
+ };
+}
+function validBaseline(b){
+ return !!(b.patientCode && b.weightKg && b.weightKg>0 && b.heightCm && b.heightCm>0 &&
+   b.mobility && b.initialSkin && b.previousPressureInjury);
+}
+function updateBmiPreview(){
+ const w=Number($('weightKg').value),h=Number($('heightCm').value)/100;
+ $('bmiValue').textContent=(w>0&&h>0)?(w/(h*h)).toFixed(2):'—';
+}
+function restoreBaseline(){
+ try{
+  const raw=localStorage.getItem('fsr4PatientBaseline');
+  if(!raw)return;
+  const b=JSON.parse(raw);patientBaseline=b;
+  $('patientCode').value=b.patientCode||'';
+  $('weightKg').value=b.weightKg||'';
+  $('heightCm').value=b.heightCm||'';
+  $('mobility').value=b.mobility||'';
+  $('initialSkin').value=b.initialSkin||'';
+  $('previousInjury').value=b.previousPressureInjury||'';
+  updateBmiPreview();
+  $('baselineSaved').textContent='Baseline tersimpan di browser ini';
+ }catch(e){console.warn('Baseline lokal tidak dapat dibaca',e)}
+}
+function saveBaseline(){
+ const b=readBaselineForm();
+ if(!validBaseline(b)){alert('Lengkapi kode pasien, berat, tinggi, mobilitas, kondisi kulit awal, dan riwayat luka tekan.');return}
+ patientBaseline=b;
+ localStorage.setItem('fsr4PatientBaseline',JSON.stringify(b));
+ $('baselineSaved').textContent='Baseline tersimpan · '+new Date().toLocaleTimeString('id-ID');
+}
+async function savePostAssessment(){
+ if(!lastFinishedSessionId){alert('Belum ada sesi yang selesai.');return}
+ const all=await localAll(),s=all.find(x=>x.id===lastFinishedSessionId);
+ if(!s){alert('Sesi tidak ditemukan di penyimpanan lokal.');return}
+ s.postAssessment={
+  finalSkin:$('finalSkin').value,
+  blanching:$('blanching').value,
+  clinicalAssessment:$('clinicalAssessment').value,
+  notes:$('finalNotes').value.trim(),
+  assessedAt:new Date().toISOString()
+ };
+ s.synced=false;
+ await localPut(s);
+ $('log').textContent='Pemeriksaan akhir tersimpan pada sesi '+s.id;
+ $('postAssessmentPanel').style.display='none';
+ await syncSessions();
+}
+
+
+const $=id=>document.getElementById(id), colors=['#38bdf8','#fbbf24','#34d399','#c084fc'];
+// Kalibrasi individual lama (ADC pada 0,100,200,300,400,500,700,1000,1500,2000 gram).
+// Sifatnya PROVISIONAL: perlu validasi ulang pada rangkaian dan pemasangan terkini.
+const CAL_MASS=[0,100,200,300,400,500,700,1000,1500,2000];
+const CAL_ADC=[
+ [0,592,1371,1575,1950,2163,2441,2463,2865,2925],
+ [0,510,1214,1619,1944,2040,2148,2331,2503,2603],
+ [0,691,1277,1694,1933,2103,2316,2468,2560,2654],
+ [0,643,1227,1518,1905,2059,2196,2211,2260,2328]
+];
+function adcToGram(adc,sensor){
+ const a=CAL_ADC[sensor];
+ if(adc<a[0] || adc>a[a.length-1]) return {g:null,valid:false,reason:'Di luar rentang kalibrasi'};
+ for(let j=0;j<a.length-1;j++){
+   if(adc>=a[j] && adc<=a[j+1]){
+     if(a[j+1]===a[j]) return {g:null,valid:false,reason:'Rentang kalibrasi datar'};
+     const f=(adc-a[j])/(a[j+1]-a[j]);
+     return {g:CAL_MASS[j]+f*(CAL_MASS[j+1]-CAL_MASS[j]),valid:true,reason:'Dalam rentang tabel'};
+   }
+ }
+ return {g:null,valid:false,reason:'Tidak dapat diinterpolasi'};
+}
+function convertAll(adc){return adc.map((v,i)=>adcToGram(v,i))}
+function sharesFromGrams(grams){
+ const total=grams.reduce((a,b)=>a+(b??0),0);
+ return total>0?grams.map(v=>100*(v??0)/total):[0,0,0,0];
+}
+function fmt(ms){let n=Math.floor(ms/1000);return String(Math.floor(n/60)).padStart(2,'0')+':'+String(n%60).padStart(2,'0')}
+function openDB(){return new Promise((resolve,reject)=>{let r=indexedDB.open(DB_NAME,1);r.onupgradeneeded=()=>{let db=r.result;if(!db.objectStoreNames.contains(STORE))db.createObjectStore(STORE,{keyPath:'id'})};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
+async function localPut(obj){let db=await openDB();return new Promise((res,rej)=>{let tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).put(obj);tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error)})}
+async function localAll(){let db=await openDB();return new Promise((res,rej)=>{let r=db.transaction(STORE).objectStore(STORE).getAll();r.onsuccess=()=>res(r.result||[]);r.onerror=()=>rej(r.error)})}
+function newId(){let d=new Date(),p=n=>String(n).padStart(2,'0');return `FSR4-${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-${Math.random().toString(36).slice(2,6).toUpperCase()}`}
+function resetForNewBaseline(){
+ // Tutup/reset hanya buffer tampilan. Sesi terdahulu sudah disimpan saat STOP.
+ recording=false; activeSession=null; sessionRows=[]; sessionStartedAt=null; finishing=false;
+ sample=0; rows=[]; hist=[[],[],[],[]]; runStart=null;
+ if(elapsedTimer){clearInterval(elapsedTimer);elapsedTimer=null}
+ $('samples').textContent='0'; $('elapsed').textContent='00:00'; $('csv').disabled=true;
+ draw(); $('log').textContent='Baseline baru: data sesi sebelumnya tidak dibawa ke sesi ini.';
+}
+function status(s){
+ currentState=s;
+ $('status').textContent='Status: '+s;
+ if(s==='BASELINE') resetForNewBaseline();
+ if(s==='RUN'&&!runStart){runStart=Date.now();elapsedTimer=setInterval(()=>$('elapsed').textContent=fmt(Date.now()-runStart),500)}
+ if(s==='RUN'&&!recording)beginSession();
+ if((s==='STOP'||s==='IDLE'||s==='READY')&&runStart){runStart=null;if(elapsedTimer){clearInterval(elapsedTimer);elapsedTimer=null}}
+ if(s==='STOP'&&recording&&!finishing)finishSession();
+}
+function beginSession(){
+ recording=true;finishing=false;activeSession=newId();sessionStartedAt=new Date().toISOString();sessionPatientBaseline=patientBaseline?{...patientBaseline}:null;sessionRows=[];
+ if(!patientBaseline) $('log').textContent='PERHATIAN: baseline pasien belum diisi. Sesi tetap direkam, tetapi konteks pasien tidak lengkap.';
+ else $('log').textContent='Merekam sesi '+activeSession+' untuk kode pasien '+patientBaseline.patientCode;
+ $('log').textContent='Merekam sesi baru '+activeSession;
+}
+function updateHeat(){
+ const conv=convertAll(values), grams=conv.map(x=>x.g), shares=sharesFromGrams(grams);
+ values.forEach((v,i)=>{
+   $('g'+i).textContent=grams[i]===null?'di luar rentang':grams[i].toFixed(0);
+   $('cal'+i).textContent=conv[i].valid?'Kalibrasi awal · interpolasi':'Periksa: '+conv[i].reason;
+   $('cal'+i).style.color=conv[i].valid?'#9db0c8':'#fca5a5';
+   const c=$('h'+i);c.querySelector('strong').textContent=grams[i]===null?'—':shares[i].toFixed(1)+'%';
+   c.style.background=`rgba(14,165,233,${.12+.65*shares[i]/100})`;
+ });
+}
+function draw(){let c=$('chart'),x=c.getContext('2d'),w=c.width,h=c.height;x.clearRect(0,0,w,h);x.strokeStyle='#2b405b';for(let k=0;k<=4;k++){let y=12+(h-38)*k/4;x.beginPath();x.moveTo(48,y);x.lineTo(w-8,y);x.stroke()}x.fillStyle='#9db0c8';x.font='12px Arial';[4095,3071,2047,1023,0].forEach((v,k)=>x.fillText(v,3,16+(h-38)*k/4));hist.forEach((a,i)=>{if(a.length<2)return;x.strokeStyle=colors[i];x.lineWidth=2;x.beginPath();a.forEach((v,j)=>{let xx=48+(w-58)*j/119,yy=12+(h-38)*(1-v/4095);j?x.lineTo(xx,yy):x.moveTo(xx,yy)});x.stroke()})}
+function onData(t){
+ let a=t.trim().split(',').map(Number);if(a.length!==4||a.some(v=>!Number.isFinite(v)||v<0||v>4095))return;
+ // Data di luar RUN hanya untuk tampilan saat BASELINE; tidak masuk hitungan/sesi.
+ values=a;a.forEach((v,i)=>{$('v'+i).textContent=Math.round(v);$('b'+i).style.width=(v/4095*100)+'%'});updateHeat();
+ const receivedAt=new Date();
+ $('last').textContent='Data diterima '+localStamp(receivedAt);
+ if(currentState==='RUN'&&recording){
+   sample++;a.forEach((v,i)=>{hist[i].push(v);if(hist[i].length>120)hist[i].shift()});draw();
+   $('samples').textContent=sample;
+   const elapsedSeconds=Math.max(0,Math.floor((receivedAt.getTime()-Date.parse(sessionStartedAt))/1000));
+   const stamp=localStamp(receivedAt);
+   rows.push([stamp,elapsedSeconds,...a]);
+   sessionRows.push({t:receivedAt.toISOString(),localTime:stamp,elapsedSeconds,adc:a.slice(),massG:convertAll(a).map(x=>x.g)});$('csv').disabled=false;
+ }
+}
+function evaluateSession(samples){
+ if(!samples.length)return {category:'DATA_TIDAK_MEMADAI',reason:['Tidak ada sampel saat RUN.'],recommendations:['Periksa koneksi BLE dan ulangi pengukuran.'],distribution:[0,0,0,0]};
+ const converted=samples.map(r=>convertAll(r.adc));
+ const validCounts=[0,1,2,3].map(i=>converted.filter(row=>row[i].valid).length);
+ const means=[0,1,2,3].map(i=>{
+   const vals=converted.map(row=>row[i].g).filter(v=>v!==null);
+   return vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:null;
+ });
+ if(means.some(v=>v===null)||validCounts.some(n=>n<samples.length*0.95)){
+   return {category:'DATA_TIDAK_MEMADAI',reason:['Sebagian pembacaan berada di luar rentang tabel kalibrasi lama atau tidak dapat dikonversi.'],recommendations:['Periksa respons dan pemasangan keempat sensor.','Validasi ulang tabel kalibrasi sebelum menafsirkan distribusi gaya.'],distribution:[0,0,0,0],meanMassG:means,validSampleCounts:validCounts};
+ }
+ const distribution=sharesFromGrams(means),peak=Math.max(...distribution),idx=distribution.indexOf(peak);
+ // Aturan 45% tetap hanya penanda teknis awal, bukan ambang klinis tervalidasi.
+ const category=peak>=45?'PERLU_EVALUASI':'PEMANTAUAN';
+ return {category,reason:category==='PERLU_EVALUASI'?[`Estimasi proporsi massa tertinggi berada pada FSR${idx+1} (${peak.toFixed(1)}%).`,'Indikator ini merupakan distribusi relatif dari kalibrasi awal, bukan diagnosis.']:['Tidak tampak dominasi relatif ≥45% pada rata-rata sesi berdasarkan kalibrasi awal.'],recommendations:category==='PERLU_EVALUASI'?['Periksa posisi mat dan sensor pada area terkait.','Tinjau distribusi pembebanan dan kondisi kulit oleh petugas kesehatan.','Pertimbangkan redistribusi pembebanan sesuai kondisi klinis.']:['Lanjutkan pemantauan sesuai prosedur.','Tetap lakukan pemeriksaan kondisi kulit sesuai protokol klinis.'],distribution,meanMassG:means,dominantSensor:'FSR'+(idx+1),thresholdNote:'Kalibrasi menggunakan tabel lama dan aturan dominasi 45% bersifat sementara; bukan ambang klinis. Estimasi perlu divalidasi.'};
+}
+async function finishSession(){
+ if(!activeSession||finishing)return;
+ finishing=true;recording=false;
+ // Snapshot dan lepaskan sesi aktif sebelum proses simpan asynchronous.
+ const id=activeSession, startedAt=sessionStartedAt, samples=sessionRows.slice();
+ activeSession=null;sessionRows=[];sessionStartedAt=null;
+ let endedAt=new Date().toISOString(),evaluation=evaluateSession(samples);
+ let obj={id,startedAt,endedAt,startedAtLocal:localDateTime(startedAt),endedAtLocal:localDateTime(endedAt),durationMs:startedAt?Date.parse(endedAt)-Date.parse(startedAt):0,sampleIntervalMs:1000,sampleCount:samples.length,samples,evaluation,patientBaseline:sessionPatientBaseline?{...sessionPatientBaseline}:null,postAssessment:null,synced:false,device:'FSR4-Monitor',dataType:'ADC_RAW',timestampSource:'Jam lokal laptop saat notifikasi BLE diterima'};
+ sessionPatientBaseline=null;
+ lastFinishedSessionId=id;
+ $('postAssessmentPanel').style.display='block';
+ $('finalSkin').value='';$('blanching').value='not_applicable';$('clinicalAssessment').value='pending';$('finalNotes').value='';
+ try{await localPut(obj);$('log').textContent=`Sesi ${id} tersimpan lokal (${samples.length} sampel). Buka Riwayat untuk QR.`;await syncSessions()}catch(e){$('log').textContent='Gagal menyimpan sesi lokal: '+e.message}
+ finishing=false;
+}
+async function getFirebase(){
+ let raw=localStorage.getItem('fsr4FirebaseConfig');
+ try{let cfg=raw?JSON.parse(raw):window.FSR4_FIREBASE_CONFIG;if(!cfg)return null;if(!firebase.apps.length)firebase.initializeApp(cfg);let auth=firebase.auth();if(!auth.currentUser)await auth.signInAnonymously();return firebase.firestore()}catch(e){console.warn('Firebase initialization/authentication failed:',e);$('syncStatus').textContent='Firebase gagal: '+(e.code||e.message);return null}
+}
+async function syncSessions(){
+ let db=await getFirebase();if(!db){if(!$('syncStatus').textContent.startsWith('Firebase gagal:'))$('syncStatus').textContent='Lokal saja — Firebase belum tersedia. Periksa internet dan konfigurasi.';return}
+ try{let all=await localAll(),count=0;for(let s of all){if(s.synced)continue;let publicDoc={id:s.id,startedAt:s.startedAt,endedAt:s.endedAt,startedAtLocal:s.startedAtLocal,endedAtLocal:s.endedAtLocal,durationMs:s.durationMs,sampleIntervalMs:s.sampleIntervalMs,sampleCount:s.sampleCount,samples:s.samples,evaluation:s.evaluation,patientBaseline:s.patientBaseline||null,postAssessment:s.postAssessment||null,timestampSource:s.timestampSource||null,device:s.device,dataType:s.dataType};await db.collection('fsr4_sessions').doc(s.id).set(publicDoc);s.synced=true;await localPut(s);count++}$('syncStatus').textContent=`Firebase tersambung · ${count} sesi disinkronkan`}
+ catch(e){$('syncStatus').textContent='Sinkronisasi gagal: '+e.message}
+}
+async function connect(){try{if(!navigator.bluetooth)throw Error('Web Bluetooth tidak didukung. Gunakan Chrome/Edge terbaru.');device=await navigator.bluetooth.requestDevice({filters:[{name:'FSR4-Monitor'}],optionalServices:[S]});device.addEventListener('gattserverdisconnected',()=>{$('connection').textContent='● Terputus';dataChar=statusChar=null});let g=await device.gatt.connect(),svc=await g.getPrimaryService(S);dataChar=await svc.getCharacteristic(D);statusChar=await svc.getCharacteristic(T);await dataChar.startNotifications();await statusChar.startNotifications();dataChar.addEventListener('characteristicvaluechanged',e=>onData(new TextDecoder().decode(e.target.value)));statusChar.addEventListener('characteristicvaluechanged',e=>status(new TextDecoder().decode(e.target.value).trim()));$('connection').textContent='● Terhubung: '+device.name}catch(e){alert('Koneksi gagal: '+e.message);console.error(e)}}
+$('connect').onclick=connect;
+$('csv').onclick=()=>{let csv='waktu_lokal,detik_ke,FSR1_ADC,FSR2_ADC,FSR3_ADC,FSR4_ADC\n'+rows.map(r=>r.join(',')).join('\n');let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='FSR4_monitoring.csv';a.click();URL.revokeObjectURL(a.href)};
+$('saveConfig').onclick=()=>{try{let cfg=JSON.parse($('firebaseConfig').value);localStorage.setItem('fsr4FirebaseConfig',JSON.stringify(cfg));$('syncStatus').textContent='Konfigurasi disimpan di browser ini.';syncSessions()}catch(e){alert('JSON Firebase tidak valid: '+e.message)}};
+$('syncNow').onclick=syncSessions;
+$('saveBaseline').onclick=saveBaseline;
+$('clearBaseline').onclick=()=>{['patientCode','weightKg','heightCm','mobility','initialSkin','previousInjury'].forEach(id=>$(id).value='');patientBaseline=null;localStorage.removeItem('fsr4PatientBaseline');updateBmiPreview();$('baselineSaved').textContent='Baseline belum disimpan'};
+['weightKg','heightCm'].forEach(id=>$(id).addEventListener('input',updateBmiPreview));
+$('savePostAssessment').onclick=savePostAssessment;
+restoreBaseline();
+let saved=localStorage.getItem('fsr4FirebaseConfig');$('firebaseConfig').value=saved||JSON.stringify(window.FSR4_FIREBASE_CONFIG,null,2);
+draw();
+</script></body></html>

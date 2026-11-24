@@ -1,0 +1,11 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /fsr4_sessions/{sessionId} {
+      // Prototype only: authenticated anonymous users can get a known session ID.
+      allow get: if request.auth != null;
+      allow create, update: if request.auth != null;
+      allow list, delete: if false;
+    }
+  }
+}
