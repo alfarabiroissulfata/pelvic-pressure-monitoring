@@ -35,8 +35,20 @@ button:disabled{opacity:.45;cursor:not-allowed}.grid{display:grid;grid-template-
 @media(max-width:430px){.patient-grid{grid-template-columns:1fr}}
 
 </style></head><body><main>
-<header><div><h1>FSR4 · Laptop Monitoring</h1><div class="muted">Tampilan pemantauan saja — kendali pengukuran dilakukan dari HP</div></div><div id="connection" class="pill">● Belum terhubung</div></header>
-<section class="panel"><div class="toolbar"><button id="connect">Hubungkan ESP32</button><span id="status" class="pill">Status: IDLE</span><span id="last" class="muted">Belum ada data</span></div><p class="note">Hubungkan ke FSR4-Monitor. Jangan jalankan halaman kontrol di laptop ini; gunakan halaman FSR4 Control pada HP. Sesi baru direkam otomatis saat status RUN dan disimpan saat STOP. Paket data direkam setiap 1 detik; jam aktual mengikuti laptop saat data BLE diterima.</p>
+<header><div><h1>FSR4 · Laptop Monitoring</h1><div class="muted">Monitoring dan kendali pengukuran langsung dari laptop melalui Bluetooth Low Energy</div></div><div id="connection" class="pill">● Belum terhubung</div></header>
+<section class="panel">
+<div class="toolbar">
+  <button id="connect">Hubungkan ESP32</button>
+  <span id="status" class="pill">Status: IDLE</span>
+  <span id="last" class="muted">Belum ada data</span>
+</div>
+<div class="toolbar" style="margin-top:14px">
+  <button id="baseline" class="secondary" disabled>1 · BASELINE</button>
+  <button id="start" disabled>2 · START PENGUKURAN</button>
+  <button id="stop" class="danger" disabled>3 · STOP</button>
+</div>
+<p class="note" id="controlMessage">Hubungkan ESP32 untuk mengaktifkan tombol kontrol. Urutan: BASELINE → READY → START → STOP.</p>
+<p class="note">Sesi baru direkam otomatis saat status RUN dan disimpan saat STOP. Paket data direkam setiap 1 detik; jam aktual mengikuti laptop saat data BLE diterima.</p>
 <a class="history-link" href="Riwayat_Pengukuran.html">▣ Buka Riwayat Pengukuran & QR →</a></section>
 
 <section class="panel">
@@ -150,9 +162,9 @@ button:disabled{opacity:.45;cursor:not-allowed}.grid{display:grid;grid-template-
 </main>
 
 <script>
-const S='6e400001-b5a3-f393-e0a9-e50e24dcca9e',D='6e400003-b5a3-f393-e0a9-e50e24dcca9e',T='6e400004-b5a3-f393-e0a9-e50e24dcca9e';
+const S='6e400001-b5a3-f393-e0a9-e50e24dcca9e',C='6e400002-b5a3-f393-e0a9-e50e24dcca9e',D='6e400003-b5a3-f393-e0a9-e50e24dcca9e',T='6e400004-b5a3-f393-e0a9-e50e24dcca9e';
 const DB_NAME='FSR4_LocalDB', STORE='sessions';
-let device,dataChar,statusChar,values=[0,0,0,0],hist=[[],[],[],[]],rows=[],sample=0,runStart=null,elapsedTimer=null;
+let device,commandChar,dataChar,statusChar,values=[0,0,0,0],hist=[[],[],[],[]],rows=[],sample=0,runStart=null,elapsedTimer=null;
 let activeSession=null, recording=false, sessionRows=[], sessionStartedAt=null, currentState='IDLE', finishing=false;
 let patientBaseline=null, sessionPatientBaseline=null, lastFinishedSessionId=null;
 function localStamp(d=new Date()){const p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`}
@@ -259,9 +271,22 @@ function resetForNewBaseline(){
  $('samples').textContent='0'; $('elapsed').textContent='00:00'; $('csv').disabled=true;
  draw(); $('log').textContent='Baseline baru: data sesi sebelumnya tidak dibawa ke sesi ini.';
 }
+function updateControlButtons(){
+ const connected=!!commandChar;
+ $('baseline').disabled=!connected||currentState==='BASELINE'||currentState==='RUN';
+ $('start').disabled=!connected||currentState!=='READY';
+ $('stop').disabled=!connected||currentState!=='RUN';
+ $('controlMessage').textContent=
+  currentState==='BASELINE'?'Sedang mengambil nilai baseline. Tunggu hingga status READY.':
+  currentState==='READY'?'Baseline selesai. Tekan START PENGUKURAN untuk mulai merekam.':
+  currentState==='RUN'?'Pengukuran sedang berlangsung. Tekan STOP untuk mengakhiri sesi.':
+  currentState==='STOP'?'Pengukuran selesai. Tekan BASELINE untuk memulai sesi baru.':
+  'Sistem IDLE. Tekan BASELINE untuk mengambil nilai referensi sensor.';
+}
 function status(s){
  currentState=s;
  $('status').textContent='Status: '+s;
+ updateControlButtons();
  if(s==='BASELINE') resetForNewBaseline();
  if(s==='RUN'&&!runStart){runStart=Date.now();elapsedTimer=setInterval(()=>$('elapsed').textContent=fmt(Date.now()-runStart),500)}
  if(s==='RUN'&&!recording)beginSession();
@@ -340,8 +365,53 @@ async function syncSessions(){
  try{let all=await localAll(),count=0;for(let s of all){if(s.synced)continue;let publicDoc={id:s.id,startedAt:s.startedAt,endedAt:s.endedAt,startedAtLocal:s.startedAtLocal,endedAtLocal:s.endedAtLocal,durationMs:s.durationMs,sampleIntervalMs:s.sampleIntervalMs,sampleCount:s.sampleCount,samples:s.samples,evaluation:s.evaluation,patientBaseline:s.patientBaseline||null,postAssessment:s.postAssessment||null,timestampSource:s.timestampSource||null,device:s.device,dataType:s.dataType};await db.collection('fsr4_sessions').doc(s.id).set(publicDoc);s.synced=true;await localPut(s);count++}$('syncStatus').textContent=`Firebase tersambung · ${count} sesi disinkronkan`}
  catch(e){$('syncStatus').textContent='Sinkronisasi gagal: '+e.message}
 }
-async function connect(){try{if(!navigator.bluetooth)throw Error('Web Bluetooth tidak didukung. Gunakan Chrome/Edge terbaru.');device=await navigator.bluetooth.requestDevice({filters:[{name:'FSR4-Monitor'}],optionalServices:[S]});device.addEventListener('gattserverdisconnected',()=>{$('connection').textContent='● Terputus';dataChar=statusChar=null});let g=await device.gatt.connect(),svc=await g.getPrimaryService(S);dataChar=await svc.getCharacteristic(D);statusChar=await svc.getCharacteristic(T);await dataChar.startNotifications();await statusChar.startNotifications();dataChar.addEventListener('characteristicvaluechanged',e=>onData(new TextDecoder().decode(e.target.value)));statusChar.addEventListener('characteristicvaluechanged',e=>status(new TextDecoder().decode(e.target.value).trim()));$('connection').textContent='● Terhubung: '+device.name}catch(e){alert('Koneksi gagal: '+e.message);console.error(e)}}
+async function connect(){
+ try{
+  if(!navigator.bluetooth)throw Error('Web Bluetooth tidak didukung. Gunakan Chrome atau Edge terbaru melalui HTTPS.');
+  $('connect').disabled=true;
+  device=await navigator.bluetooth.requestDevice({filters:[{name:'FSR4-Monitor'}],optionalServices:[S]});
+  device.addEventListener('gattserverdisconnected',()=>{
+   commandChar=dataChar=statusChar=null;
+   $('connection').textContent='● Terputus';
+   $('connect').disabled=false;
+   updateControlButtons();
+  });
+  const g=await device.gatt.connect(),svc=await g.getPrimaryService(S);
+  commandChar=await svc.getCharacteristic(C);
+  dataChar=await svc.getCharacteristic(D);
+  statusChar=await svc.getCharacteristic(T);
+  dataChar.addEventListener('characteristicvaluechanged',e=>onData(new TextDecoder().decode(e.target.value)));
+  statusChar.addEventListener('characteristicvaluechanged',e=>status(new TextDecoder().decode(e.target.value).trim()));
+  await dataChar.startNotifications();
+  await statusChar.startNotifications();
+  $('connection').textContent='● Terhubung: '+device.name;
+  updateControlButtons();
+  $('log').textContent='BLE terhubung. Siap menerima data dan perintah dari laptop.';
+ }catch(e){
+  commandChar=dataChar=statusChar=null;
+  $('connection').textContent='● Gagal terhubung';
+  $('connect').disabled=false;
+  updateControlButtons();
+  alert('Koneksi gagal: '+e.message);
+  console.error(e);
+ }
+}
+async function sendCommand(command){
+ if(!commandChar){alert('Hubungkan ESP32 terlebih dahulu.');return}
+ try{
+  const payload=new TextEncoder().encode(command);
+  if(commandChar.writeValueWithResponse)await commandChar.writeValueWithResponse(payload);
+  else await commandChar.writeValue(payload);
+  $('log').textContent='Perintah '+command+' berhasil dikirim ke ESP32. Menunggu perubahan status.';
+ }catch(e){
+  $('log').textContent='Gagal mengirim perintah '+command+': '+e.message;
+  alert('Perintah gagal: '+e.message);
+ }
+}
 $('connect').onclick=connect;
+$('baseline').onclick=()=>sendCommand('BASELINE');
+$('start').onclick=()=>sendCommand('START');
+$('stop').onclick=()=>sendCommand('STOP');
 $('csv').onclick=()=>{let csv='waktu_lokal,detik_ke,FSR1_ADC,FSR2_ADC,FSR3_ADC,FSR4_ADC\n'+rows.map(r=>r.join(',')).join('\n');let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='FSR4_monitoring.csv';a.click();URL.revokeObjectURL(a.href)};
 $('saveConfig').onclick=()=>{try{let cfg=JSON.parse($('firebaseConfig').value);localStorage.setItem('fsr4FirebaseConfig',JSON.stringify(cfg));$('syncStatus').textContent='Konfigurasi disimpan di browser ini.';syncSessions()}catch(e){alert('JSON Firebase tidak valid: '+e.message)}};
 $('syncNow').onclick=syncSessions;
@@ -350,6 +420,7 @@ $('clearBaseline').onclick=()=>{['patientCode','weightKg','heightCm','mobility',
 ['weightKg','heightCm'].forEach(id=>$(id).addEventListener('input',updateBmiPreview));
 $('savePostAssessment').onclick=savePostAssessment;
 restoreBaseline();
+updateControlButtons();
 let saved=localStorage.getItem('fsr4FirebaseConfig');$('firebaseConfig').value=saved||JSON.stringify(window.FSR4_FIREBASE_CONFIG,null,2);
 draw();
 </script></body></html>
